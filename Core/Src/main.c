@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "sensor.h"
+#include "uart_log.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
