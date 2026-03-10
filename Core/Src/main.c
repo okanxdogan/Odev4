@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "sensor.h"
 #include "uart_log.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,7 +47,8 @@ ADC_HandleTypeDef hadc1;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+uint32_t measurement_count = 0;
+SensorData_t current_sensor_data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -95,7 +97,20 @@ int main(void)
   MX_ADC1_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+  
+  // BOOT TESTI: Sistem acildiginda LED 3 kez yanip soner
+  UART_Print(&huart1, "[SISTEM] TUFAN Sensor Dashboard baslatiliyor...\r\n");
+  UART_Print(&huart1, "[SISTEM] LED yanip sonuyor (3x boot testi)...\r\n");
 
+  for(int i = 0; i < 3; i++) {
+      // STM32'de PC13 pini genelde Active-Low (ters) calisir. RESET = LED Yanar.
+      HAL_GPIO_WritePin(LED_STATUS_GPIO_Port, LED_STATUS_Pin, GPIO_PIN_RESET); 
+      HAL_Delay(500);
+      HAL_GPIO_WritePin(LED_STATUS_GPIO_Port, LED_STATUS_Pin, GPIO_PIN_SET);   
+      HAL_Delay(500);
+  }
+
+  UART_Print(&huart1, "[SISTEM] Hazir. Olcum icin butona basiniz.\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -105,6 +120,56 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    
+    // 1. BUTON OKUMA
+    if (HAL_GPIO_ReadPin(BTN_MEASURE_GPIO_Port, BTN_MEASURE_Pin) == GPIO_PIN_SET) {
+        
+        // 2. DEBOUNCE BEKLEMESI (50 ms)
+        HAL_Delay(50);
+        
+        // Buton hala basili mi?
+        if (HAL_GPIO_ReadPin(BTN_MEASURE_GPIO_Port, BTN_MEASURE_Pin) == GPIO_PIN_SET) {
+            
+            // 3. OLCUM BASLAT
+            HAL_GPIO_WritePin(LED_STATUS_GPIO_Port, LED_STATUS_Pin, GPIO_PIN_RESET); // LED'i Yak
+            
+            // Senin (Liderin) yazdigi kutuphaneyi cagiriyoruz
+            current_sensor_data = Sensor_Read(&hadc1); 
+            
+            // 4. UART ILE EKRANA BASTIRMA
+            if (current_sensor_data.error_flag == 0) {
+                measurement_count++;
+                
+                char header[64];
+                sprintf(header, "======== TUFAN SENSOR OKUMASI #%lu ========\r\n", measurement_count);
+                UART_Print(&huart1, header);
+                
+                char raw_msg[64];
+                sprintf(raw_msg, "Ham ADC Degeri: %d\r\n", current_sensor_data.raw_value);
+                UART_Print(&huart1, raw_msg);
+                
+                UART_PrintFloat(&huart1, "Gerilim", current_sensor_data.voltage, 2);
+                UART_PrintFloat(&huart1, "Batarya Sim.", current_sensor_data.percentage, 1);
+                UART_Print(&huart1, "LED Durumu ACIK (olcum)\r\n");
+                
+                // SINIR DURUM (Edge Case): Voltaj sinirlari disindaysa uyari ver
+                if (current_sensor_data.voltage < 0.0f || current_sensor_data.voltage > 3.3f) {
+                    UART_Print(&huart1, "[UYARI] ADC degeri aralik disi! (kontrol edin)\r\n");
+                }
+            } else {
+                // Zaman asimi hatasi
+                UART_Print(&huart1, "[HATA] ADC Zaman Asimi! Olcum atlandi.\r\n");
+            }
+            
+            // 5. TEMIZLIK
+            HAL_GPIO_WritePin(LED_STATUS_GPIO_Port, LED_STATUS_Pin, GPIO_PIN_SET); // LED'i Sondur
+            
+            // Butonun birakilmasini bekle (Tek tusa tek islem)
+            while(HAL_GPIO_ReadPin(BTN_MEASURE_GPIO_Port, BTN_MEASURE_Pin) == GPIO_PIN_SET) {
+                // Bekle
+            }
+        }
+    }
   }
   /* USER CODE END 3 */
 }
@@ -291,10 +356,10 @@ void Error_Handler(void)
   }
   /* USER CODE END Error_Handler_Debug */
 }
-#ifdef USE_FULL_ASSERT
+#ifdef  USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
+  * where the assert_param error has occurred.
   * @param  file: pointer to the source file name
   * @param  line: assert_param error line source number
   * @retval None
